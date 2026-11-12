@@ -1,0 +1,252 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Evolve Lab: watch tiny AIs learn</title>
+<meta name="description" content="Watch 100 tiny neural networks learn to fly and drive by evolution, live in your browser. Change the rules and see what happens.">
+<style>
+:root{--bg:#07080c;--panel:#10121a;--line:#232736;--text:#eef0f6;--dim:#8d93a6;--green:#5be37d;--yellow:#ffd84a;--blue:#58c7ff;--red:#ff5a5a}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--text);font:16px/1.5 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}
+main{max-width:980px;margin:0 auto;padding:20px 16px 60px}
+h1{font-size:clamp(26px,5vw,40px);line-height:1.1;margin:8px 0 6px;font-weight:800}
+h2{font-size:20px;margin:34px 0 8px}
+p{color:#c9cddb;margin:8px 0}
+.sub{color:var(--yellow);font-weight:600}
+.tabs{display:flex;gap:8px;margin:18px 0 10px;flex-wrap:wrap}
+button{font:inherit;color:var(--text);background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:9px 14px;cursor:pointer}
+button:hover{border-color:#3a4058}
+button.on{background:var(--green);color:#06210e;border-color:var(--green);font-weight:700}
+.wrap{display:grid;grid-template-columns:minmax(0,1fr) 280px;gap:14px}
+@media(max-width:760px){.wrap{grid-template-columns:1fr}}
+canvas{width:100%;display:block;border-radius:14px;border:1px solid var(--line);background:#090b11}
+.panel{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:14px}
+.stat{display:flex;justify-content:space-between;align-items:baseline;margin:2px 0}
+.stat b{font-size:26px;font-variant-numeric:tabular-nums}
+.stat span{color:var(--dim);font-size:12px;letter-spacing:.08em;text-transform:uppercase;font-weight:700}
+label{display:block;color:var(--dim);font-size:13px;margin:12px 0 2px}
+label b{color:var(--text);float:right;font-variant-numeric:tabular-nums}
+input[type=range]{width:100%;accent-color:var(--green)}
+.row{display:flex;gap:8px;flex-wrap:wrap;margin-top:12px}
+.row button{flex:1;padding:8px 6px;font-size:14px}
+#chart{height:120px;margin-top:12px}
+.note{font-size:14px;color:var(--dim)}
+ol{color:#c9cddb;padding-left:20px}
+a{color:var(--blue)}
+footer{margin-top:40px;color:var(--dim);font-size:14px;border-top:1px solid var(--line);padding-top:14px}
+</style>
+</head>
+<body>
+<main>
+<div class="sub">EVOLVE LAB</div>
+<h1>Watch tiny AIs learn, live in your browser</h1>
+<p>Each dot is a neural network with fewer than 60 numbers in it. Nobody tells it how to fly or drive. The ones that get furthest are copied with small random changes, and that is the whole method. Change the rules on the right and see what happens.</p>
+
+<div class="tabs" id="tabs">
+  <button data-task="gates" class="on">Fly through gates</button>
+  <button data-task="drive">Drive a track</button>
+</div>
+
+<div class="wrap">
+  <canvas id="cv" width="900" height="620" aria-label="simulation"></canvas>
+  <div class="panel">
+    <div class="stat"><span>Generation</span><b id="sGen">1</b></div>
+    <div class="stat"><span>Still going</span><b id="sAlive">0</b></div>
+    <div class="stat"><span id="lBest">Best so far</span><b id="sBest">0</b></div>
+    <canvas id="chart" width="500" height="240" aria-label="progress per generation"></canvas>
+    <div class="note" id="chartNote">best and median score per generation</div>
+    <label>Population <b id="vPop">100</b><input id="pop" type="range" min="20" max="300" step="10" value="100"></label>
+    <label>Mutation size <b id="vMut">0.15</b><input id="mut" type="range" min="0.01" max="0.6" step="0.01" value="0.15"></label>
+    <label><span id="lDiff">Gap height</span> <b id="vDiff"></b><input id="diff" type="range" min="0" max="1" step="0.01" value="0.5"></label>
+    <div class="row">
+      <button id="sp1" class="on">1x</button><button id="sp4">4x</button><button id="sp20">20x</button>
+    </div>
+    <div class="row">
+      <button id="skip">Skip 10 generations</button><button id="reset">Start over</button>
+    </div>
+  </div>
+</div>
+
+<h2>What is happening</h2>
+<ol>
+  <li><b>Generation 1 is random.</b> Every network starts with random numbers, so almost all of them crash straight away.</li>
+  <li><b>Score.</b> Each network gets one number back: how far it got. It is never told what it did wrong.</li>
+  <li><b>Select.</b> The top 10% survive unchanged.</li>
+  <li><b>Mutate.</b> The rest of the next generation are copies of survivors with small random changes. Repeat.</li>
+</ol>
+<p>This is called neuroevolution. Things to try: set mutation to the maximum and watch learning fall apart, or shrink the population to 20 and see how much longer it takes. Every run is different because the starting numbers are random.</p>
+<p class="note">What the networks see. Gates: how far the next gap is above or below, own vertical speed, distance to the gate, and the gap after that (4 inputs, 6 hidden neurons, 1 output: flap or not). Driving: 5 distances to the track edge, like laser beams (5 inputs, 6 hidden neurons, 1 output: steering). Each generation gets a new random course, so they cannot memorise one.</p>
+
+<footer>Made by <a href="https://www.instagram.com/atc5.builds/">@atc5.builds</a>, where a new simulation is posted every day. Everything runs on your device; nothing is uploaded or tracked.</footer>
+</main>
+
+<script>
+"use strict";
+const $ = id => document.getElementById(id);
+const cv = $("cv"), ctx = cv.getContext("2d"), ch = $("chart"), cx2 = ch.getContext("2d");
+const W = cv.width, H = cv.height;
+function gauss(){ let u = 0, v = 0; while(!u) u = Math.random(); while(!v) v = Math.random(); return Math.sqrt(-2*Math.log(u))*Math.cos(2*Math.PI*v); }
+function hsl(i, n, a){ return `hsla(${185 + 45*i/n},90%,72%,${a})`; }
+
+// ---------- a tiny fully connected net: NI inputs -> HID tanh -> 1 output ----------
+function netSize(ni, hid){ return ni*hid + hid + hid + 1; }
+function forward(w, obs, ni, hid){
+  let o = w[ni*hid + 2*hid];
+  for(let j = 0; j < hid; j++){
+    let s = w[ni*hid + j];
+    for(let i = 0; i < ni; i++) s += obs[i]*w[i*hid + j];
+    o += Math.tanh(s)*w[ni*hid + hid + j];
+  }
+  return o;
+}
+
+// ---------- task 1: gates ----------
+const Gates = {
+  name: "gates", NI: 4, HID: 6, bestLabel: "Most gates", diffLabel: "Gap height",
+  diffText(d){ return this.gapH(d).toFixed(1); }, gapH(d){ return 1.4 + 1.6*d; },
+  G: -22, J: 6.5, VX: 3, SP: 4, X0: 6, DT: 1/30, CAP: 60,
+  start(n, d){
+    this.gaps = Array.from({length: this.CAP + 3}, () => 2.2 + 5.6*Math.random());
+    this.gh = this.gapH(d); this.x = 0; this.step = 0;
+    this.y = new Float32Array(n).fill(5); this.vy = new Float32Array(n);
+    this.alive = new Uint8Array(n).fill(1); this.score = new Float32Array(n); this.deadX = new Float32Array(n);
+    this.trail = [];
+  },
+  tick(pop){
+    const n = pop.length, k = Math.max(Math.ceil((this.x - this.X0 - 0.25)/this.SP), 0), gx = this.X0 + k*this.SP;
+    const obs = [0, 0, (gx - this.x)/this.SP, 0];
+    let any = 0;
+    this.x += this.VX*this.DT;
+    const inside = Math.abs(this.x - gx) < 0.25;
+    for(let i = 0; i < n; i++){
+      if(!this.alive[i]) continue;
+      obs[0] = (this.gaps[k] - this.y[i])/5; obs[1] = this.vy[i]/8; obs[3] = (this.gaps[k+1] - this.y[i])/5;
+      if(forward(pop[i], obs, 4, 6) > 0) this.vy[i] = this.J; else this.vy[i] += this.G*this.DT;
+      this.y[i] += this.vy[i]*this.DT;
+      if(this.y[i] < 0 || this.y[i] > 10 || (inside && Math.abs(this.y[i] - this.gaps[k]) > this.gh/2 - 0.12)){ this.alive[i] = 0; this.deadX[i] = this.x; }
+      else { this.score[i] = this.x; any++; }
+    }
+    this.step++;
+    const passed = Math.max(Math.floor((this.x - this.X0 - 0.25)/this.SP) + 1, 0);
+    return {alive: any, done: any === 0 || passed >= this.CAP, best: passed};
+  },
+  unit(s){ return Math.max(Math.floor((s - this.X0 - 0.25)/this.SP) + 1, 0); },
+  draw(n){
+    const S = H/10.6, BX = W*0.22, Y = y => H - 0.3*S - S*y;
+    ctx.fillStyle = "#090b11"; ctx.fillRect(0, 0, W, H);
+    ctx.strokeStyle = "#555b70"; ctx.lineWidth = 3;
+    ctx.beginPath(); ctx.moveTo(0, Y(0)); ctx.lineTo(W, Y(0)); ctx.moveTo(0, Y(10)); ctx.lineTo(W, Y(10)); ctx.stroke();
+    for(let j = Math.max(0, Math.floor((this.x - 4 - this.X0)/this.SP)); j < this.gaps.length; j++){
+      const gx = BX + (this.X0 + j*this.SP - this.x)*S; if(gx > W + 30) break;
+      const lo = this.gaps[j] - this.gh/2, hi = this.gaps[j] + this.gh/2;
+      ctx.fillStyle = "#2b2e3b"; ctx.fillRect(gx - 0.25*S, Y(lo), 0.5*S, Y(0) - Y(lo)); ctx.fillRect(gx - 0.25*S, Y(10), 0.5*S, Y(hi) - Y(10));
+      ctx.fillStyle = "#5be37d"; ctx.fillRect(gx - 0.25*S, Y(lo) - 2, 0.5*S, 4); ctx.fillRect(gx - 0.25*S, Y(hi) - 2, 0.5*S, 4);
+    }
+    for(let i = 0; i < n; i++){
+      if(this.alive[i]){ ctx.fillStyle = hsl(i, n, .9); ctx.beginPath(); ctx.arc(BX, Y(this.y[i]), 6, 0, 7); ctx.fill(); }
+      else { const px = BX - (this.x - this.deadX[i])*S; if(px > -10){ ctx.fillStyle = "rgba(255,90,90,.55)"; ctx.beginPath(); ctx.arc(px, Y(Math.min(Math.max(this.y[i], 0), 10)), 4, 0, 7); ctx.fill(); } }
+    }
+  }
+};
+
+// ---------- task 2: drive ----------
+const Drive = {
+  name: "drive", NI: 5, HID: 6, bestLabel: "Most laps", diffLabel: "Car speed",
+  diffText(d){ return this.speed(d).toFixed(1); }, speed(d){ return 3 + 4*d; },
+  DT: 1/30, STEER: 5, HALF: 0.4, RMAX: 3, ANG: [-60, -30, 0, 30, 60].map(a => a*Math.PI/180), CAPT: 30,
+  rad(th){ let r = 3.3; for(const h of this.harm) r += h.a*Math.cos(h.k*th + h.p); return Math.min(Math.max(r, 1.9), 4.5); },
+  on(x, y){ const dx = x - 5, dy = y - 5; return Math.abs(Math.hypot(dx, dy) - this.rad(Math.atan2(dy, dx))) < this.HALF; },
+  start(n, d){
+    this.harm = [2, 3, 4, 5].map(k => ({k, a: 0.2 + 0.3*Math.random(), p: 6.283*Math.random()}));
+    this.v = this.speed(d); this.t = 0;
+    const r0 = this.rad(0), r1 = this.rad(0.02);
+    const h0 = Math.atan2(r1*Math.sin(0.02), 5 + r1*Math.cos(0.02) - (5 + r0));
+    this.x = new Float32Array(n).fill(5 + r0); this.y = new Float32Array(n).fill(5); this.h = new Float32Array(n).fill(h0);
+    this.alive = new Uint8Array(n).fill(1); this.score = new Float32Array(n); this.thp = new Float32Array(n);
+    this.pts = []; for(let i = 0; i <= 360; i++){ const th = i*Math.PI/180; this.pts.push([Math.cos(th), Math.sin(th), this.rad(th)]); }
+  },
+  tick(pop){
+    const n = pop.length, obs = [0, 0, 0, 0, 0]; let any = 0, best = 0;
+    for(let i = 0; i < n; i++){
+      if(this.alive[i]){
+        for(let r = 0; r < 5; r++){
+          const a = this.h[i] + this.ANG[r], ca = Math.cos(a), sa = Math.sin(a); let d = this.RMAX;
+          for(let s = 0.15; s <= this.RMAX; s += 0.15) if(!this.on(this.x[i] + ca*s, this.y[i] + sa*s)){ d = s; break; }
+          obs[r] = d/this.RMAX;
+        }
+        this.h[i] += this.STEER*Math.tanh(forward(pop[i], obs, 5, 6))*this.DT;
+        this.x[i] += this.v*Math.cos(this.h[i])*this.DT; this.y[i] += this.v*Math.sin(this.h[i])*this.DT;
+        if(!this.on(this.x[i], this.y[i])) this.alive[i] = 0;
+        else {
+          const th = Math.atan2(this.y[i] - 5, this.x[i] - 5); let dth = th - this.thp[i];
+          dth = ((dth + Math.PI) % (2*Math.PI) + 2*Math.PI) % (2*Math.PI) - Math.PI;
+          this.score[i] += dth/(2*Math.PI); this.thp[i] = th; any++;
+        }
+      }
+      if(this.score[i] > best) best = this.score[i];
+    }
+    this.t += this.DT;
+    return {alive: any, done: any === 0 || this.t >= this.CAPT, best: Math.floor(best)};
+  },
+  unit(s){ return Math.max(s, 0); },
+  draw(n){
+    const S = Math.min(W, H)/10.4, ox = W/2 - 5*S, oy = H/2 + 5*S, P = (x, y) => [ox + x*S, oy - y*S];
+    ctx.fillStyle = "#090b11"; ctx.fillRect(0, 0, W, H);
+    const ring = off => { ctx.beginPath(); this.pts.forEach(([c, s, r], i) => { const [px, py] = P(5 + (r + off)*c, 5 + (r + off)*s); i ? ctx.lineTo(px, py) : ctx.moveTo(px, py); }); ctx.closePath(); };
+    ring(this.HALF); ctx.fillStyle = "#1a1d28"; ctx.fill(); ctx.strokeStyle = "#8e96b5"; ctx.lineWidth = 2; ctx.stroke();
+    ring(-this.HALF); ctx.fillStyle = "#090b11"; ctx.fill(); ctx.stroke();
+    const r0 = this.rad(0); ctx.strokeStyle = "#ffd84a"; ctx.lineWidth = 3; ctx.beginPath(); ctx.moveTo(...P(5 + r0 - this.HALF, 5)); ctx.lineTo(...P(5 + r0 + this.HALF, 5)); ctx.stroke();
+    for(let i = 0; i < n; i++){
+      const [px, py] = P(this.x[i], this.y[i]);
+      ctx.fillStyle = this.alive[i] ? hsl(i, n, .9) : "rgba(255,90,90,.55)";
+      ctx.beginPath(); ctx.arc(px, py, this.alive[i] ? 5 : 3.5, 0, 7); ctx.fill();
+    }
+  }
+};
+
+// ---------- evolution loop ----------
+let task = Gates, pop = [], gen = 1, speed = 1, hist = [], bestEver = 0, skipLeft = 0;
+function newPop(){ const n = +$("pop").value, m = netSize(task.NI, task.HID); pop = Array.from({length: n}, () => Float32Array.from({length: m}, () => 0.8*gauss())); }
+function restart(){ newPop(); gen = 1; hist = []; bestEver = 0; skipLeft = 0; task.start(pop.length, +$("diff").value); labels(); drawChart(); }
+function labels(){
+  $("lBest").textContent = task.bestLabel; $("lDiff").textContent = task.diffLabel;
+  $("vPop").textContent = $("pop").value; $("vMut").textContent = (+$("mut").value).toFixed(2); $("vDiff").textContent = task.diffText(+$("diff").value);
+}
+function nextGen(){
+  const n = pop.length, sc = Array.from(task.score, s => task.unit(s)), order = sc.map((s, i) => i).sort((a, b) => task.score[b] - task.score[a]);
+  const sorted = sc.slice().sort((a, b) => a - b);
+  hist.push({best: sorted[n - 1], med: sorted[n >> 1]});
+  const want = +$("pop").value, keep = Math.max(2, Math.round(want*0.1)), mut = +$("mut").value;
+  const elite = order.slice(0, keep).map(i => pop[i]), next = elite.slice();
+  while(next.length < want){ const p = elite[Math.floor(Math.random()*elite.length)]; next.push(p.map(v => v + mut*gauss())); }
+  pop = next; gen++; task.start(pop.length, +$("diff").value); drawChart();
+}
+function drawChart(){
+  const w = ch.width, h = ch.height; cx2.fillStyle = "#0b0d14"; cx2.fillRect(0, 0, w, h);
+  if(!hist.length) return;
+  const top = Math.max(1, ...hist.map(p => p.best)), n = hist.length;
+  const line = (key, col) => { cx2.strokeStyle = col; cx2.lineWidth = 3; cx2.beginPath(); hist.forEach((p, i) => { const x = 8 + (w - 16)*(n === 1 ? 0 : i/(n - 1)), y = h - 10 - (h - 24)*p[key]/top; i ? cx2.lineTo(x, y) : cx2.moveTo(x, y); }); cx2.stroke(); };
+  line("med", "#58c7ff"); line("best", "#5be37d");
+  cx2.fillStyle = "#8d93a6"; cx2.font = "22px system-ui"; cx2.fillText(String(Math.round(top*10)/10), 8, 24);
+}
+function loop(){
+  let iters = skipLeft > 0 ? 4000 : speed, r = null;
+  while(iters-- > 0){
+    r = task.tick(pop);
+    if(r.best > bestEver) bestEver = r.best;
+    if(r.done){ nextGen(); if(skipLeft > 0 && --skipLeft === 0) break; }
+  }
+  task.draw(pop.length);
+  $("sGen").textContent = gen; $("sAlive").textContent = (r ? r.alive : pop.length) + "/" + pop.length; $("sBest").textContent = bestEver;
+  requestAnimationFrame(loop);
+}
+for(const b of $("tabs").children) b.onclick = () => { for(const o of $("tabs").children) o.classList.toggle("on", o === b); task = b.dataset.task === "gates" ? Gates : Drive; $("diff").value = 0.5; restart(); };
+for(const [id, v] of [["sp1", 1], ["sp4", 4], ["sp20", 20]]) $(id).onclick = () => { speed = v; for(const o of ["sp1", "sp4", "sp20"]) $(o).classList.toggle("on", o === id); };
+$("skip").onclick = () => { skipLeft = 10; };
+$("reset").onclick = restart;
+for(const id of ["pop", "mut", "diff"]) $(id).oninput = labels;
+restart(); loop();
+</script>
+</body>
+</html>
