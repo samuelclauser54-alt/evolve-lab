@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Evolve Lab: watch tiny AIs learn</title>
-<meta name="description" content="Watch 100 tiny neural networks learn to fly and drive by evolution, live in your browser. Change the rules and see what happens.">
+<meta name="description" content="Watch 100 tiny neural networks learn to fly, drive and shoot by evolution, live in your browser. Change the rules and see what happens.">
 <style>
 :root{--bg:#07080c;--panel:#10121a;--line:#232736;--text:#eef0f6;--dim:#8d93a6;--green:#5be37d;--yellow:#ffd84a;--blue:#58c7ff;--red:#ff5a5a}
 *{box-sizing:border-box}
@@ -41,11 +41,12 @@ footer{margin-top:40px;color:var(--dim);font-size:14px;border-top:1px solid var(
 <main>
 <div class="sub">EVOLVE LAB</div>
 <h1>Watch tiny AIs learn, live in your browser</h1>
-<p>Each dot is a neural network with fewer than 60 numbers in it. Nobody tells it how to fly or drive. The ones that get furthest are copied with small random changes, and that is the whole method. Change the rules on the right and see what happens.</p>
+<p>Each dot is a neural network with fewer than 60 numbers in it. Nobody tells it how to fly, drive or shoot. The ones that get furthest are copied with small random changes, and that is the whole method. Change the rules on the right and see what happens.</p>
 
 <div class="tabs" id="tabs">
   <button data-task="gates" class="on">Fly through gates</button>
   <button data-task="drive">Drive a track</button>
+  <button data-task="hoops">Shoot a basketball</button>
 </div>
 
 <div class="wrap">
@@ -76,7 +77,7 @@ footer{margin-top:40px;color:var(--dim);font-size:14px;border-top:1px solid var(
   <li><b>Mutate.</b> The rest of the next generation are copies of survivors with small random changes. Repeat.</li>
 </ol>
 <p>This is called neuroevolution. Things to try: set mutation to the maximum and watch learning fall apart, or shrink the population to 20 and see how much longer it takes. Every run is different because the starting numbers are random.</p>
-<p class="note">What the networks see. Gates: how far the next gap is above or below, own vertical speed, distance to the gate, and the gap after that (4 inputs, 6 hidden neurons, 1 output: flap or not). Driving: 5 distances to the track edge, like laser beams (5 inputs, 6 hidden neurons, 1 output: steering). Each generation gets a new random course, so they cannot memorise one.</p>
+<p class="note">What the networks see. Gates: how far the next gap is above or below, own vertical speed, distance to the gate, and the gap after that (4 inputs, 6 hidden neurons, 1 output: flap or not). Driving: 5 distances to the track edge, like laser beams (5 inputs, 6 hidden neurons, 1 output: steering). Basketball: only the distance to the hoop (1 input, 6 hidden neurons, 2 outputs: launch angle and speed); the rim height, ball size and gravity are real, and only clean makes count. Each generation gets a new random course, so they cannot memorise one.</p>
 
 <footer>Made by <a href="https://www.instagram.com/atc5.builds/">@atc5.builds</a>, where a new simulation is posted every day. Everything runs on your device; nothing is uploaded or tracked.</footer>
 </main>
@@ -205,9 +206,59 @@ const Drive = {
   }
 };
 
+// ---------- task 3: hoops (each net sees only its distance, outputs launch angle + speed) ----------
+const Hoops = {
+  name: "hoops", NI: 1, HID: 6, OUT2: true, MUT: 0.3, bestLabel: "Most made", diffLabel: "Rim width (m)",
+  diffText(d){ return this.rimW(d).toFixed(2); }, rimW(d){ return 0.3 + 0.5*d; },
+  G: 9.81, RIM_H: 3.05, BALL_R: 0.12, REL_H: 2.1, DT: 1/60,
+  shot(w, dist){          // net: 1 -> 6 tanh -> 2 tanh
+    let a = w[18], v = w[19];
+    for(let j = 0; j < 6; j++){ const h = Math.tanh(w[j]*((dist - 4.75)/3.25) + w[6 + j]); a += h*w[12 + j]; v += h*w[20 + j]; }
+    const ang = (55 + 25*Math.tanh(a))*Math.PI/180, sp = 9 + 5*Math.tanh(v);
+    const vx = sp*Math.cos(ang), vy = sp*Math.sin(ang), dy = this.RIM_H - this.REL_H, disc = vy*vy - 2*this.G*dy;
+    const tr = disc > 0 ? (vy + Math.sqrt(disc))/this.G : -1, miss = disc > 0 ? vx*tr - dist : -dist;
+    const tf = (dist - this.rw/2)/vx, yf = this.REL_H + vy*tf - 0.5*this.G*tf*tf;
+    const made = disc > 0 && Math.abs(miss) < this.rw/2 - this.BALL_R && (yf > this.RIM_H + this.BALL_R || tf > tr);
+    return {vx, vy, tr, miss, made, tfl: (vy + Math.sqrt(vy*vy + 2*this.G*this.REL_H))/this.G};
+  },
+  start(n, d){
+    this.rw = this.rimW(d); this.t = 0; this.n = n;
+    this.dist = Float32Array.from({length: n}, () => 1.5 + 6.5*Math.random());
+    this.rel = Float32Array.from({length: n}, () => 0.8*Math.random());
+    this.score = new Float32Array(n); this.sh = null;
+  },
+  tick(pop){
+    const n = pop.length;
+    if(!this.sh){             // decide every shot once; score = 8 hidden practice shots + the one you see
+      this.sh = pop.map((w, i) => this.shot(w, this.dist[i]));
+      for(let i = 0; i < n; i++){ let f = 0; for(let k = 0; k < 8; k++){ const r = this.shot(pop[i], 1.5 + 6.5*Math.random()); f += r.made ? 2 : -Math.min(Math.abs(r.miss), 3); } this.score[i] = f; }
+    }
+    this.t += this.DT;
+    let made = 0, flying = 0;
+    for(let i = 0; i < n; i++){ const s = this.sh[i], tt = this.t - this.rel[i]; if(s.made && tt >= s.tr) made++; else if(tt < (s.made ? s.tr : s.tfl)) flying++; }
+    return {alive: flying, done: flying === 0 && this.t > 1, best: made};
+  },
+  unit(s){ return Math.max(0, s/16*100); },      // chart: score as % of a perfect round
+  draw(n){
+    const S = W/10.6, FL = H - 40, HX = 9.3, P = (x, y) => [20 + S*x, FL - S*y];
+    ctx.fillStyle = "#090b11"; ctx.fillRect(0, 0, W, H);
+    ctx.strokeStyle = "#555b70"; ctx.lineWidth = 3; ctx.beginPath(); ctx.moveTo(0, FL); ctx.lineTo(W, FL); ctx.stroke();
+    ctx.strokeStyle = "#e8e8f0"; ctx.lineWidth = 5; ctx.beginPath(); ctx.moveTo(...P(HX + this.rw/2 + 0.1, 2.9)); ctx.lineTo(...P(HX + this.rw/2 + 0.1, 3.95)); ctx.stroke();
+    ctx.strokeStyle = "#ff9a3c"; ctx.lineWidth = 5; ctx.beginPath(); ctx.moveTo(...P(HX - this.rw/2, this.RIM_H)); ctx.lineTo(...P(HX + this.rw/2, this.RIM_H)); ctx.stroke();
+    if(!this.sh) return;
+    for(let i = 0; i < n; i++){
+      const s = this.sh[i], x0 = HX - this.dist[i], tt = this.t - this.rel[i];
+      if(tt < 0){ ctx.fillStyle = hsl(i, n, .9); ctx.beginPath(); ctx.arc(...P(x0, this.REL_H), 5, 0, 7); ctx.fill(); continue; }
+      if(s.made && tt >= s.tr){ if(tt - s.tr < 0.4){ ctx.fillStyle = "rgba(91,227,125,.9)"; ctx.beginPath(); ctx.arc(...P(HX + s.miss, this.RIM_H - 3*(tt - s.tr)), 6, 0, 7); ctx.fill(); } continue; }
+      if(tt >= s.tfl){ ctx.fillStyle = "rgba(255,90,90,.5)"; ctx.beginPath(); ctx.arc(...P(Math.min(x0 + s.vx*s.tfl, 10.2), 0.1), 3.5, 0, 7); ctx.fill(); continue; }
+      ctx.fillStyle = hsl(i, n, .95); ctx.beginPath(); ctx.arc(...P(x0 + s.vx*tt, this.REL_H + s.vy*tt - 0.5*this.G*tt*tt), 6, 0, 7); ctx.fill();
+    }
+  }
+};
+
 // ---------- evolution loop ----------
 let task = Gates, pop = [], gen = 1, speed = 1, hist = [], bestEver = 0, skipLeft = 0;
-function newPop(){ const n = +$("pop").value, m = netSize(task.NI, task.HID); pop = Array.from({length: n}, () => Float32Array.from({length: m}, () => 0.8*gauss())); }
+function newPop(){ const n = +$("pop").value, m = task.OUT2 ? 26 : netSize(task.NI, task.HID); pop = Array.from({length: n}, () => Float32Array.from({length: m}, () => 0.8*gauss())); }
 function restart(){ newPop(); gen = 1; hist = []; bestEver = 0; skipLeft = 0; task.start(pop.length, +$("diff").value); labels(); drawChart(); }
 function labels(){
   $("lBest").textContent = task.bestLabel; $("lDiff").textContent = task.diffLabel;
@@ -217,7 +268,7 @@ function nextGen(){
   const n = pop.length, sc = Array.from(task.score, s => task.unit(s)), order = sc.map((s, i) => i).sort((a, b) => task.score[b] - task.score[a]);
   const sorted = sc.slice().sort((a, b) => a - b);
   hist.push({best: sorted[n - 1], med: sorted[n >> 1]});
-  const want = +$("pop").value, keep = Math.max(2, Math.round(want*0.1)), mut = +$("mut").value;
+  const want = +$("pop").value, keep = Math.max(2, Math.round(want*0.1)), mut = +$("mut").value*(task.MUT || 1);
   const elite = order.slice(0, keep).map(i => pop[i]), next = elite.slice();
   while(next.length < want){ const p = elite[Math.floor(Math.random()*elite.length)]; next.push(p.map(v => v + mut*gauss())); }
   pop = next; gen++; task.start(pop.length, +$("diff").value); drawChart();
@@ -241,7 +292,7 @@ function loop(){
   $("sGen").textContent = gen; $("sAlive").textContent = (r ? r.alive : pop.length) + "/" + pop.length; $("sBest").textContent = bestEver;
   requestAnimationFrame(loop);
 }
-for(const b of $("tabs").children) b.onclick = () => { for(const o of $("tabs").children) o.classList.toggle("on", o === b); task = b.dataset.task === "gates" ? Gates : Drive; $("diff").value = 0.5; restart(); };
+for(const b of $("tabs").children) b.onclick = () => { for(const o of $("tabs").children) o.classList.toggle("on", o === b); task = {gates: Gates, drive: Drive, hoops: Hoops}[b.dataset.task]; $("diff").value = 0.5; restart(); };
 for(const [id, v] of [["sp1", 1], ["sp4", 4], ["sp20", 20]]) $(id).onclick = () => { speed = v; for(const o of ["sp1", "sp4", "sp20"]) $(o).classList.toggle("on", o === id); };
 $("skip").onclick = () => { skipLeft = 10; };
 $("reset").onclick = restart;
