@@ -1,0 +1,6 @@
+{
+  "name": "evolve-arena",
+  "main": "src/worker.js",
+  "compatibility_date": "2026-10-01",
+  "d1_databases": [{ "binding": "DB", "database_name": "evolve-arena", "database_id": "46499f34-3492-49a2-b635-4b1a9af68866" }]
+}

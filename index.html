@@ -69,6 +69,20 @@ footer{margin-top:40px;color:var(--dim);font-size:14px;border-top:1px solid var(
   </div>
 </div>
 
+<div class="panel" id="arena" style="margin-top:14px">
+  <div class="sub">THE ARENA</div>
+  <h2 style="margin:4px 0 6px">Enter your AI. The best 100 race in a video.</h2>
+  <p>Train a flyer above, then enter the best one from your last generation. It is scored on the arena course, where <b>every gap is 3.5% smaller than the one before</b>, over 5 courses it has never seen (300 gates in total). The top 100 on the board fly against each other in a reel on <a href="https://www.instagram.com/atc5.builds/">@atc5.builds</a> with their nicknames on screen.</p>
+  <div class="row" style="align-items:center">
+    <input id="aName" maxlength="16" placeholder="nickname (not your real name)" autocomplete="off" style="flex:2;min-width:180px;font:inherit;color:var(--text);background:#0b0d14;border:1px solid var(--line);border-radius:10px;padding:9px 12px">
+    <button id="aSubmit" disabled style="flex:1">Enter my best AI</button>
+    <button id="aPractice" style="flex:1">Train on the arena course: off</button>
+  </div>
+  <p class="note" id="aMsg">Finish at least one generation first.</p>
+  <ol id="aTop" style="columns:2;column-gap:28px;margin:8px 0 0"></ol>
+  <p class="note" id="aTotal"></p>
+</div>
+
 <h2>What is happening</h2>
 <ol>
   <li><b>Generation 1 is random.</b> Every network starts with random numbers, so almost all of them crash straight away.</li>
@@ -79,7 +93,7 @@ footer{margin-top:40px;color:var(--dim);font-size:14px;border-top:1px solid var(
 <p>This is called neuroevolution. Things to try: set mutation to the maximum and watch learning fall apart, or shrink the population to 20 and see how much longer it takes. Every run is different because the starting numbers are random.</p>
 <p class="note">What the networks see. Gates: how far the next gap is above or below, own vertical speed, distance to the gate, and the gap after that (4 inputs, 6 hidden neurons, 1 output: flap or not). Driving: 5 distances to the track edge, like laser beams (5 inputs, 6 hidden neurons, 1 output: steering). Basketball: only the distance to the hoop (1 input, 6 hidden neurons, 2 outputs: launch angle and speed); the rim height, ball size and gravity are real, and only clean makes count. Each generation gets a new random course, so they cannot memorise one.</p>
 
-<footer>Made by <a href="https://www.instagram.com/atc5.builds/">@atc5.builds</a>, where a new simulation is posted every day. Everything runs on your device; nothing is uploaded or tracked.</footer>
+<footer>Made by <a href="https://www.instagram.com/atc5.builds/">@atc5.builds</a>, where a new simulation is posted every day. Everything runs on your device. Nothing is uploaded unless you press “Enter my best AI”, which sends your nickname and that network's 37 numbers. The page also adds 1 to an anonymous counter of visits and of generations trained: no cookies, no IDs.</footer>
 </main>
 
 <script>
@@ -107,9 +121,10 @@ const Gates = {
   name: "gates", NI: 4, HID: 6, bestLabel: "Most gates", diffLabel: "Gap height",
   diffText(d){ return this.gapH(d).toFixed(1); }, gapH(d){ return 1.4 + 1.6*d; },
   G: -22, J: 6.5, VX: 3, SP: 4, X0: 6, DT: 1/30, CAP: 60,
+  ghk(k){ return this.arena ? Math.max(2.6*Math.pow(0.965, k), 0.6) : this.gh; },
   start(n, d){
     this.gaps = Array.from({length: this.CAP + 3}, () => 2.2 + 5.6*Math.random());
-    this.gh = this.gapH(d); this.x = 0; this.step = 0;
+    this.gh = this.gapH(d); this.arena = arenaCourse; this.x = 0; this.step = 0;
     this.y = new Float32Array(n).fill(5); this.vy = new Float32Array(n);
     this.alive = new Uint8Array(n).fill(1); this.score = new Float32Array(n); this.deadX = new Float32Array(n);
     this.trail = [];
@@ -119,13 +134,13 @@ const Gates = {
     const obs = [0, 0, (gx - this.x)/this.SP, 0];
     let any = 0;
     this.x += this.VX*this.DT;
-    const inside = Math.abs(this.x - gx) < 0.25;
+    const inside = Math.abs(this.x - gx) < 0.25, ghk = this.ghk(k);
     for(let i = 0; i < n; i++){
       if(!this.alive[i]) continue;
       obs[0] = (this.gaps[k] - this.y[i])/5; obs[1] = this.vy[i]/8; obs[3] = (this.gaps[k+1] - this.y[i])/5;
       if(forward(pop[i], obs, 4, 6) > 0) this.vy[i] = this.J; else this.vy[i] += this.G*this.DT;
       this.y[i] += this.vy[i]*this.DT;
-      if(this.y[i] < 0 || this.y[i] > 10 || (inside && Math.abs(this.y[i] - this.gaps[k]) > this.gh/2 - 0.12)){ this.alive[i] = 0; this.deadX[i] = this.x; }
+      if(this.y[i] < 0 || this.y[i] > 10 || (inside && Math.abs(this.y[i] - this.gaps[k]) > ghk/2 - 0.12)){ this.alive[i] = 0; this.deadX[i] = this.x; }
       else { this.score[i] = this.x; any++; }
     }
     this.step++;
@@ -140,7 +155,7 @@ const Gates = {
     ctx.beginPath(); ctx.moveTo(0, Y(0)); ctx.lineTo(W, Y(0)); ctx.moveTo(0, Y(10)); ctx.lineTo(W, Y(10)); ctx.stroke();
     for(let j = Math.max(0, Math.floor((this.x - 4 - this.X0)/this.SP)); j < this.gaps.length; j++){
       const gx = BX + (this.X0 + j*this.SP - this.x)*S; if(gx > W + 30) break;
-      const lo = this.gaps[j] - this.gh/2, hi = this.gaps[j] + this.gh/2;
+      const gh = this.ghk(j), lo = this.gaps[j] - gh/2, hi = this.gaps[j] + gh/2;
       ctx.fillStyle = "#2b2e3b"; ctx.fillRect(gx - 0.25*S, Y(lo), 0.5*S, Y(0) - Y(lo)); ctx.fillRect(gx - 0.25*S, Y(10), 0.5*S, Y(hi) - Y(10));
       ctx.fillStyle = "#5be37d"; ctx.fillRect(gx - 0.25*S, Y(lo) - 2, 0.5*S, 4); ctx.fillRect(gx - 0.25*S, Y(hi) - 2, 0.5*S, 4);
     }
@@ -257,9 +272,9 @@ const Hoops = {
 };
 
 // ---------- evolution loop ----------
-let task = Gates, pop = [], gen = 1, speed = 1, hist = [], bestEver = 0, skipLeft = 0;
+let task = Gates, pop = [], gen = 1, speed = 1, hist = [], bestEver = 0, skipLeft = 0, champ = null, champGen = 0, arenaCourse = false, gensSince = 0;
 function newPop(){ const n = +$("pop").value, m = task.OUT2 ? 26 : netSize(task.NI, task.HID); pop = Array.from({length: n}, () => Float32Array.from({length: m}, () => 0.8*gauss())); }
-function restart(){ newPop(); gen = 1; hist = []; bestEver = 0; skipLeft = 0; task.start(pop.length, +$("diff").value); labels(); drawChart(); }
+function restart(){ newPop(); gen = 1; hist = []; bestEver = 0; skipLeft = 0; champ = null; champGen = 0; arenaUI(); task.start(pop.length, +$("diff").value); labels(); drawChart(); }
 function labels(){
   $("lBest").textContent = task.bestLabel; $("lDiff").textContent = task.diffLabel;
   $("vPop").textContent = $("pop").value; $("vMut").textContent = (+$("mut").value).toFixed(2); $("vDiff").textContent = task.diffText(+$("diff").value);
@@ -270,6 +285,7 @@ function nextGen(){
   hist.push({best: sorted[n - 1], med: sorted[n >> 1]});
   const want = +$("pop").value, keep = Math.max(2, Math.round(want*0.1)), mut = +$("mut").value*(task.MUT || 1);
   const elite = order.slice(0, keep).map(i => pop[i]), next = elite.slice();
+  champ = Array.from(elite[0]); champGen = gen; gensSince++; arenaUI();
   while(next.length < want){ const p = elite[Math.floor(Math.random()*elite.length)]; next.push(p.map(v => v + mut*gauss())); }
   pop = next; gen++; task.start(pop.length, +$("diff").value); drawChart();
 }
@@ -297,6 +313,39 @@ for(const [id, v] of [["sp1", 1], ["sp4", 4], ["sp20", 20]]) $(id).onclick = () 
 $("skip").onclick = () => { skipLeft = 10; };
 $("reset").onclick = restart;
 for(const id of ["pop", "mut", "diff"]) $(id).oninput = labels;
+
+// ---------- arena ----------
+const ARENA = location.hostname.endsWith("github.io") ? "https://evolve-arena.samuelclauser54.workers.dev" : "http://localhost:8787";
+function esc(t){ return String(t).replace(/[&<>"]/g, c => ({"&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;"}[c])); }
+function arenaUI(){
+  $("arena").style.display = task === Gates ? "" : "none";
+  const ok = task === Gates && champ;
+  $("aSubmit").disabled = !ok;
+  if(!$("aMsg").dataset.keep) $("aMsg").textContent = ok ? `Ready: the best flyer of generation ${champGen}.` : "Finish at least one generation first.";
+}
+function showBoard(b){
+  if(!b || !b.top) return;
+  $("aTop").innerHTML = b.top.map(r => `<li><b>${esc(r.name)}</b> <span class="note">${r.score} of ${b.max} gates</span></li>`).join("");
+  $("aTotal").textContent = b.total ? `${b.total.toLocaleString()} AIs entered so far. ${(b.gens || 0).toLocaleString()} generations trained in this lab.` : "Nobody has entered yet. Be the first.";
+}
+function api(path, body){ return fetch(ARENA + path, body ? {method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify(body)} : undefined).then(r => r.json()); }
+$("aPractice").onclick = () => { arenaCourse = !arenaCourse; $("aPractice").textContent = "Train on the arena course: " + (arenaCourse ? "on" : "off"); $("aPractice").classList.toggle("on", arenaCourse); $("diff").disabled = arenaCourse; restartKeep(); };
+function restartKeep(){ hist = []; bestEver = 0; task.start(pop.length, +$("diff").value); drawChart(); }
+$("aSubmit").onclick = async () => {
+  const name = $("aName").value.trim(), m = $("aMsg"); m.dataset.keep = "1";
+  if(!/^[A-Za-z0-9_.\- ]{2,16}$/.test(name)){ m.textContent = "Pick a nickname of 2 to 16 letters or digits."; return; }
+  $("aSubmit").disabled = true; m.textContent = "Flying the arena course…";
+  try {
+    const r = await api("/submit", {name, w: champ, gen: champGen});
+    if(r.error) m.textContent = r.error;
+    else { m.innerHTML = `<b style="color:var(--green)">${esc(name)} cleared ${r.score} of ${r.max} gates: rank #${r.rank} of ${r.total}.</b> ${r.rank <= 100 ? "Right now that is inside the top 100." : "The top 100 make the video. Train longer or change the settings and enter again."}`; showBoard(r); try { localStorage.setItem("arenaName", name); } catch(e){} }
+  } catch(e){ m.textContent = "Could not reach the arena. Check your connection and try again."; }
+  $("aSubmit").disabled = false;
+};
+try { $("aName").value = localStorage.getItem("arenaName") || ""; } catch(e){}
+api("/top").then(showBoard).catch(() => {});
+api("/hit", {}).catch(() => {});
+setInterval(() => { if(gensSince >= 25){ const g = gensSince; gensSince = 0; api("/hit", {gens: g}).catch(() => {}); } }, 20000);
 restart(); loop();
 </script>
 </body>
