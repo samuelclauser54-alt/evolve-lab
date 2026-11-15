@@ -15,3 +15,7 @@ Each network has fewer than 60 numbers in it. Nobody shows it how to fly or driv
 | Drive | 5 distances to the track edge (rays at -60°, -30°, 0°, 30°, 60°) | 6 tanh | steering rate |
 
 Each generation uses a new random course, so the networks cannot memorise one. The top 10% survive unchanged; the rest are mutated copies of survivors.
+
+## Also here
+
+- [`tree.py`](tree.py): a spinning ASCII Christmas tree in 103 lines of Python (NumPy only). Run `python tree.py` in a terminal.
