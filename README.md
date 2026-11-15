@@ -19,3 +19,5 @@ Each generation uses a new random course, so the networks cannot memorise one. T
 ## Also here
 
 - [`tree.py`](tree.py): a spinning ASCII Christmas tree in 103 lines of Python (NumPy only). Run `python tree.py` in a terminal.
+- [`heart.py`](heart.py): a beating 3D heart in text, from one implicit equation. `python heart.py`
+- [`fire.py`](fire.py): a text fire where every cell copies the one below it, a little cooler. `python fire.py`
